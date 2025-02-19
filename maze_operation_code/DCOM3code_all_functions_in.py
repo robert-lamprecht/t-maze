@@ -1,0 +1,408 @@
+import serial
+import time
+import numpy as np
+import json
+
+
+#floor_level = ser.readline().decode('ascii')
+# is not none stamnet will check is there is a value assined to a vaiable
+print('here')
+ser = serial.Serial('COM3', 115200, timeout=1)
+time.sleep(2)
+print('here2')
+
+def floorLevel(level):
+    out = 'F,'+str(level)+'\n'
+    ser.write(bytes(out,'utf-8'))
+    time.sleep(0.01)
+    data = ser.readline().decode('ascii')
+    return data
+def initialize():
+    out = 'Z'
+    ser.write(bytes(out, 'utf-8'))
+    time.sleep(0.01)
+    door_stat(1,0)
+
+    time.sleep(0.01)
+    door_stat(2,0)
+    time.sleep(0.01)
+    door_stat(3,0)
+    time.sleep(0.01)
+    door_stat(4,0)
+
+    global mouseID
+    while True:
+        mouseID = input('enter mouse ID: ')
+        if mouseID not in ['BAB2' , 'BAB4', 'BBC1','BBC2','BBC4','BBC6','TEST']:
+            print('not a real ID')
+        else:
+            break
+    while True: 
+       out4 =  ser.readline().decode('ascii')
+       print(out4)
+       out2 = 'E,0\n'
+       if out4 == out2: 
+           break 
+
+       ser.reset_input_buffer()
+
+    numTrials = int(input('enter number of trials'))
+    return numTrials
+
+def lickSpout():
+
+    out1 = 'L,1,1'
+    ser.write(bytes(out1, 'utf-8'))
+    time.sleep(0.01)
+    out2 = 'L,2,1'
+    ser.write(bytes(out2, 'UTF-8'))
+    time.sleep(0.01)
+    out = 'E,0\n'
+    while True: 
+        data = ser.readline().decode('ascii')
+        print(repr(data))
+        if data == out:
+            ser.reset_input_buffer()
+            break 
+
+
+
+def openValve(valveID, duration):
+    out = 'V,'+str(valveID)+','+str(duration)+'\n'
+    ser.write(bytes(out,'utf-8'))
+    time.sleep(0.01)
+    data = ser.readline().decode('ascii')
+    return data
+
+
+def readStatus():
+    out = 'S'
+    ser.write(bytes(out, 'utf-8'))
+    time.sleep(0.01)
+    data = ser.readline().decode('ascii')
+    # print(repr(data))
+    return data
+
+def door_stat(doorID, open_close):
+    out = 'D,'+str(doorID)+ ',' +str(open_close)+ '\n'
+    ser.write(bytes(out, 'utf-8'))
+    time.sleep(0.01)
+    data = ser.readline().decode('ascii')
+    return data
+
+def openDoor(): 
+    door_stat(1,1)
+
+    door_stat(2,1 )
+
+
+
+animaldict = {
+    'BAB2': {
+        'F,1':'right(V2)',
+        'F,2':'left(V1)',
+        'F,3':'right(V2)',
+        'F,4':'left(V1)'
+        },
+    'BAB4': {
+        'F,1':'right(V2)',
+        'F,2':'left(V1)',
+        'F,3':'right(V2)', 
+        'F,4':'left(V1)'
+        },
+    'BBC1': {
+        'F,1':'left(V1)',
+        'F,2':'right(V2)',
+        'F,3':'left(V1)', 
+        'F,4':'right(V2)'
+    },
+    'BBC2': {
+        'F,1':'left(V1)',
+        'F,2':'right(V2)',
+        'F,3':'left(V1)', 
+        'F,4':'right(V2)'
+    },
+    'BBC4': {
+       'F,1':'right(V2)',
+        'F,2':'left(V1)',
+        'F,3':'right(V2)',
+        'F,4':'left(V1)'
+    },
+    'BBC6': {
+       'F,1':'right(V2)',
+        'F,2':'left(V1)',
+        'F,3':'right(V2)',
+        'F,4':'left(V1)'
+    },
+    'TEST': {
+        'F,1':'left(V1)',
+        'F,2':'right(V2)',
+        'F,3':'left(V1)', 
+        'F,4':'right(V2)'
+    }
+}
+
+
+def runTrial (savefile, numTrials, rewardBeforeLick=False, valveOpenTime=50, lickUntilCorrect=False):
+
+    trials = numTrials
+    rightProb = 0.5
+    on_trial = 0 
+    correct_trials = 0
+    previousDirections = []
+    
+
+    for trial in range(trials):
+        trial_time = time.localtime()
+        on_trial = int(on_trial) + 1 
+        start_time = time.time()
+        incorrectFlag=False
+        try:  
+            with open(savefile,'r') as file: 
+                data = json.load(file)
+        except:
+            data = {}
+        try: 
+            last_key = list(data[mouseID].keys())[-1]
+            trial_number = data[mouseID][last_key]['trial_number']
+        except: 
+            trial_number = 0
+        current_trial = 1 + int(trial_number)
+        trial_key = 'trial' + str(current_trial)
+        
+        print(previousDirections)
+        if len(previousDirections) > 10:
+            
+            # print('prevDirectionsLen',len(previousDirections))
+            print(np.sum(np.array(previousDirections[-10:]) == 'right(V2)'))
+            if np.sum(np.array(previousDirections[-10:]) == 'right(V2)')/10 > 0.9:
+                rightProb = 0
+            elif np.sum(np.array(previousDirections[-10:]) == 'right(V2)')/10 < 0.1:
+                rightProb = 1
+            else:
+                rightProb = 0.5
+        else:
+            rightProb = 0.5
+        print('rightProb',rightProb)
+        rightFloors = []
+        leftFloors = []
+        for key in animaldict[mouseID].keys():
+            if animaldict[mouseID][key] == 'right(V2)':
+                rightFloors.append(int(key[-1]))
+            else:
+                leftFloors.append(int(key[-1]))
+        print('right floors',rightFloors)
+        print('left floors',leftFloors)
+        if np.random.binomial(1,rightProb):
+            if np.random.binomial(1,0.5):
+                floor = rightFloors[0]
+                print('CorrectValve: right')
+            else:
+                floor = rightFloors[1]
+                print('CorrectValve: right')
+        else:
+            if np.random.binomial(1,0.5):
+                floor = leftFloors[0]
+                print('CorrectValve: left')
+            else:
+                floor = leftFloors[1]
+                print('CorrectValve: left' )
+
+        
+
+        floorLevel(floor)
+        while True: 
+            serial_output4 = ser.readline().decode('ascii')
+            out6 = 'E,0\n'
+            if serial_output4 == out6: 
+               break 
+
+
+
+        openDoor()
+        out = 'A2\n'
+        while True: 
+            ser1 = ser.readline().decode('ascii') 
+            if ser1 == out: 
+                door_stat(1,0)
+                door_stat(2,0)
+                start_time = time.time()
+                break 
+
+
+        ser.reset_input_buffer()
+        serOutput = readStatus()
+        # print(serOutput)
+        floor1 = 'F,1' in serOutput
+        floor2 = 'F,2' in serOutput
+        floor3 = 'F,3' in serOutput
+        floor4 = 'F,4' in serOutput
+        if floor1: 
+            current_floor = 'F,1'
+        elif floor2:
+            current_floor = 'F,2'
+        elif floor3:
+            current_floor = 'F,3'
+        elif floor4:
+            current_floor = 'F,4'
+        print(F'the current floor is {current_floor}')
+
+        
+        if rewardBeforeLick:
+            if animaldict[mouseID][current_floor] == 'right(V2)':
+                print('dispensing reward on right valve (V2)')
+                openValve(2,valveOpenTime)
+            elif animaldict[mouseID][current_floor] == 'left(V1)':
+                print('dispensing reward on left valve (V1)')
+                openValve(1,valveOpenTime)
+
+        right_lick = False  
+        left_lick = False
+        out2 = 'L2\n'
+        out1 = 'L1\n'
+        time.sleep(0.01)
+
+        firstLickOccurred = False
+        lickDirection = False
+        #logic for openning correct valve 
+        while True:
+            break_loop = False 
+            serial_output2 = ser.readline().decode('ascii')
+            print(serial_output2)
+            if serial_output2 == out1:
+                left_lick = True
+                right_lick = False
+                lickDirection = 'left(V1)'
+
+            elif serial_output2 == out2:
+                right_lick = True
+                left_lick = False
+                lickDirection = 'right(V2)'
+
+            if (lickDirection != False) and (firstLickOccurred == False):
+                firstLickDirection = lickDirection[:]
+                previousDirections.append(lickDirection)
+                print('here3')
+                firstLickOccurred = True
+            print(left_lick, right_lick)
+            if serial_output2 == out1 or serial_output2 == out2:
+                if animaldict[mouseID][current_floor] == lickDirection:
+                    if right_lick:
+                        if not rewardBeforeLick:
+                            openValve(2,valveOpenTime)
+                        if not incorrectFlag:
+                            decision = 'correct'
+                            correct_trials += 1
+                            print('right valve open; {} trials correct'.format(correct_trials))
+                        end_time = time.time()
+                        break_loop = True
+                        door_stat(3,1)
+                        time.sleep(0.1)
+                        door_stat(4,1)
+                        #decision = 'correct'
+                    elif left_lick:
+                        if not rewardBeforeLick:
+                            openValve(1,valveOpenTime)
+                        if not incorrectFlag:
+                            decision ='correct'
+                            correct_trials += 1
+                            print('left valve open; {} trials correct'.format(correct_trials))
+                        end_time = time.time()
+                        break_loop = True 
+                        door_stat(3,1)
+                        time.sleep(0.1)
+                        door_stat(4,1)
+                        end_time = time.time()
+                if animaldict[mouseID][current_floor] != lickDirection:
+                    decision = 'incorrect'
+                    print('{}, {} correct trials'.format(decision, correct_trials))      
+                    incorrectFlag = True
+                    if not lickUntilCorrect:
+                        door_stat(3,1)
+                        time.sleep(0.1)
+                        door_stat(4,1)
+                        end_time = time.time()
+                        break
+            if break_loop: 
+                incorrectFlag=False
+                break 
+
+
+
+
+        time_for_trial = int(end_time) - int(start_time)
+
+        if mouseID not in data: 
+            data[mouseID] = {}
+            data[mouseID][trial_key] = {'rewardBefLick': rewardBeforeLick,'lickUntilCorrect': lickUntilCorrect,'decision': decision, 'floorID': current_floor,
+                                        'time_for_trial': time_for_trial,'valve':floor, 'lick': firstLickDirection,
+                                        'trial_number': current_trial, 'trial_time': trial_time,
+                                        'right_probability': rightProb,'rewardAmount(ms)': valveOpenTime,}
+        elif mouseID in data:
+            data[mouseID][trial_key] = {'rewardBefLick': rewardBeforeLick,'lickUntilCorrect': lickUntilCorrect,'decision': decision, 'floorID': current_floor,
+                                        'time_for_trial': time_for_trial,'valve':floor, 'lick': firstLickDirection,
+                                        'trial_number': current_trial, 'trial_time': trial_time,
+                                        'right_probability': rightProb,'rewardAmount(ms)': valveOpenTime,}
+        sorted_items = sorted(data[mouseID].items(), key=lambda x: x[1]["trial_number"])
+        data[mouseID] = {k: v for k, v in sorted_items}
+
+        with open(savefile, 'w') as file: 
+            json.dump(data, file, indent = 4)
+
+
+
+
+
+        if on_trial == trials: 
+            return
+        else: 
+            pass
+
+
+
+
+
+
+
+        print('Trail number:', on_trial)
+
+        out = 'A1\n'
+        while True: 
+            ser1 = ser.readline().decode('ascii') 
+            if ser1 == out: 
+                door_stat(3,0)
+                door_stat(4,0)
+                start_time = time.time()
+                break
+
+
+    
+    out = 'A1\n'
+    while True: 
+        ser1 = ser.readline().decode('ascii') 
+        if ser1 == out: 
+            door_stat(3,0)
+            door_stat(4,0)
+            start_time = time.time()
+            break 
+
+
+numTrials = initialize()
+currentTime = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+data_file_name = 'D:/TMAZE_DATA/data_{0}_{1}.json'.format(mouseID,currentTime)
+lickSpout()
+lickUntilCorrect=input('LickUntillCorrect? T/F [case sensitive]: ')
+lickUntilCorrect_bool=lickUntilCorrect=='T'
+rewardBefLick = input('Reward before lick? T/F [case sensitive]: ')
+rewardBefLick_bool = rewardBefLick == 'T'
+valveOpenTime = int(input('Valve open time (ms): '))
+runTrial(data_file_name, numTrials, rewardBeforeLick=rewardBefLick_bool, valveOpenTime=valveOpenTime,lickUntilCorrect=lickUntilCorrect_bool)
+out = 'A1\n'
+while True: 
+    ser1 = ser.readline().decode('ascii') 
+    if ser1 == out: 
+        door_stat(3,0)
+        door_stat(4,0)
+        start_time = time.time()
+        break 
+print('Finished')
